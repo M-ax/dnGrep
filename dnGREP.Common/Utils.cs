@@ -1196,7 +1196,7 @@ namespace dnGREP.Common
                     List<string> gitDirectories = SafeDirectory.GetGitignoreDirectories(subPath, filter.IncludeSubfolders, filter.FollowSymlinks, pauseCancelToken);
                     if (gitDirectories.Count != 0)
                     {
-                        gitignore = GitUtil.GetGitignore(gitDirectories);
+                        gitignore = GitUtil.GetGitignore(gitDirectories, pauseCancelToken.CancellationToken);
                     }
                 }
 

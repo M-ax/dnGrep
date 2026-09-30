@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 
 namespace dnGREP.Common
 {
@@ -50,8 +51,9 @@ namespace dnGREP.Common
             return false;
         }
 
-        public static Gitignore GetGitignore(string path)
+        public static Gitignore GetGitignore(string path, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             List<string> list = [];
 
             if (IsGitInstalled)
@@ -71,28 +73,48 @@ namespace dnGREP.Common
                 proc.StartInfo = startInfo;
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     proc.Start();
-                    while (!proc.StandardOutput.EndOfStream)
+                    proc.BeginErrorReadLine();
+                    while (true)
                     {
-                        string? line = proc.StandardOutput.ReadLine();
+                        // EndOfStream and synchronous reads can block until Git produces output.
+                        string? line = proc.StandardOutput.ReadLineAsync(cancellationToken)
+                            .AsTask().GetAwaiter().GetResult();
+                        if (line == null)
+                            break;
+
                         if (!string.IsNullOrEmpty(line) && line.StartsWith("!! ", StringComparison.OrdinalIgnoreCase))
                             list.Add(line[3..].Trim('"'));
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Disposing Process does not stop Git or any child processes it started.
+                    try
+                    {
+                        proc.Kill(entireProcessTree: true);
+                    }
+                    catch (InvalidOperationException) { }
+                    catch (Win32Exception) { }
+                    throw;
                 }
                 catch (InvalidOperationException) { }
                 catch (Win32Exception) { }
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             return new Gitignore(path, list);
         }
 
-        public static Gitignore GetGitignore(List<string> paths)
+        public static Gitignore GetGitignore(List<string> paths, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Gitignore results = new();
 
             foreach (var path in paths)
             {
-                results.Merge(GetGitignore(path));
+                results.Merge(GetGitignore(path, cancellationToken));
             }
 
             return results;

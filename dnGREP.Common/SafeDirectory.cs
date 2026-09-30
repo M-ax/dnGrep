@@ -30,6 +30,7 @@ namespace dnGREP.Common
         public static List<string> GetGitignoreDirectories(string path, bool recursive, bool followSymlinks,
             PauseCancelToken pauseCancelToken)
         {
+            pauseCancelToken.CancellationToken.ThrowIfCancellationRequested();
             if (File.Exists(Path.Combine(path, ".gitignore")))
                 return [path];
 
@@ -82,34 +83,30 @@ namespace dnGREP.Common
                 }
             };
 
-            try
-            {
-                // search down subdirectories
-                var list = DirectoryEx.EnumerateFiles(path, fileOptions, fileFilters)
-                    .Select(s => Path.GetDirectoryName(s) ?? string.Empty).ToList();
+            // search down subdirectories
+            var list = DirectoryEx.EnumerateFiles(path, fileOptions, fileFilters)
+                .Select(s => Path.GetDirectoryName(s) ?? string.Empty).ToList();
 
-                if (list.Count == 0)
+            pauseCancelToken.CancellationToken.ThrowIfCancellationRequested();
+
+            if (list.Count == 0)
+            {
+                // not found, search up the tree
+                DirectoryInfo di = new(path);
+                while (di.Parent != null)
                 {
-                    // not found, search up the tree
-                    DirectoryInfo di = new(path);
-                    while (di.Parent != null)
+                    pauseCancelToken.CancellationToken.ThrowIfCancellationRequested();
+                    if (File.Exists(Path.Combine(di.Parent.FullName, ".gitignore")))
                     {
-                        if (File.Exists(Path.Combine(di.Parent.FullName, ".gitignore")))
-                        {
-                            list.Add(path);
-                            break;
-                        }
-
-                        di = di.Parent;
+                        list.Add(path);
+                        break;
                     }
-                }
 
-                return list;
+                    di = di.Parent;
+                }
             }
-            catch (OperationCanceledException)
-            {
-                return [];
-            }
+
+            return list;
         }
 
         public static IEnumerable<string> EnumerateFiles(string path, List<string> patterns,
